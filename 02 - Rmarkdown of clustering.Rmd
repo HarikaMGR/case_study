@@ -1,0 +1,159 @@
+---
+title: "Data prep"
+output: html_document
+---
+Set working directory
+```{r}
+getwd()
+setwd("./Data")
+getwd()
+```
+
+Install the libraries
+```{r, include=FALSE, message=FALSE}
+require(data.table)
+require(kmed)
+require(tm)
+require(devtools)
+require(Rcpp)
+require(rmarkdown)
+require(clv)
+require(text2vec)
+require(text2vec)
+```
+
+Import the data
+
+```{r}
+query_dt <- fread("C:/Users/harika/Desktop/interview prep/dubbizle/Data/za_queries_sample.csv")
+listings_dt <- fread("C:/Users/harika/Desktop/interview prep/dubbizle/Data/za_sample_listings_incl_cat.csv")
+```
+
+Summary of the datasets
+
+```{r}
+head(query_dt)
+nrow(query_dt)
+length(unique(query_dt$search_term))
+head(listings_dt)
+length(unique(listings_dt$category_l1_name_en))
+length(unique(listings_dt$category_l2_name_en)) 
+length(unique(listings_dt$category_l3_name_en)) 
+
+listings_dt[,.N, by = category_l2_name_en]
+```
+
+Check the sub groups within each category level2. Looks like except for vehicles, the category level 3 is not populated 
+```{r}
+listings_dt[,.N, by = category_l2_name_en]
+listings_dt[,.N, by = .(category_l2_name_en,category_l3_name_en)][,.N,by = .(category_l2_name_en)]
+```
+
+Building the model at a category level 1 will not be granular enough. Category level 3 doesn't have good coverage. So the clustering will be done for each category level2.
+Test the approach/model on one category
+
+```{r}
+listings_test <- listings_dt[category_l2_name_en == "iPads & Tablets"]
+# combine the title and the descriptions
+listings_test[, listing_title_desc := paste(listing_title, listing_description)]
+
+```
+
+Combination of listing title and description is considered to extract the features. It can also be useful to give more weight to title compared to description.
+
+```{r}
+corpus <- Corpus(VectorSource(listings_test$listing_title_desc))
+dtm <- DocumentTermMatrix(corpus, control = list(removePunctuation = TRUE
+                                                 , stopwords = TRUE
+                                                 ,weighting = weightTfIdf)
+                          )
+dim(dtm) 
+inspect(dtm)
+dtm <- removeSparseTerms(dtm, .999)
+dim(dtm)
+```
+
+Using all factors will not give enough weight to factors like price and location.Instead of using price and location to calculate an overall distance, seperate distances were calculated for features (text words), price and location. Further the distances were scaled using the maximum or 90% percentile distance and a weighted average is applied to calculate the final distance
+
+```{r}
+dist_dtm <- sqrt(distNumeric(as.matrix(dtm), as.matrix(dtm), method = "se"))
+max(dist_dtm)
+min(dist_dtm)
+hist(dist_dtm)
+quantile(dist_dtm, probs = c(0.99), na.rm = TRUE)
+dist_dtm <- dist_dtm/max(dist_dtm)
+```
+
+Distance calculation based on price
+
+```{r}
+dist_price <- sqrt(distNumeric(as.matrix(listings_test[,.(listing_price)])
+                          ,as.matrix(listings_test[,.(listing_price)]), method = "se"))
+max(dist_price)
+min(dist_price)
+hist(dist_price)
+dist_price_cap <- quantile(dist_price, probs = c(0.90), na.rm = TRUE)
+dist_price_cap
+dist_price <- dist_price/dist_price_cap
+```
+
+Distance calculation based on geo coordinates
+```{r}
+dist_loc <- sqrt(distNumeric(as.matrix(listings_test[,.(listing_latitude, listing_longitude)])
+                        ,as.matrix(listings_test[,.(listing_latitude, listing_longitude)]), method = "se"))
+max(dist_loc)
+min(dist_loc)
+hist(dist_loc) # doesnt have outliers
+dist_loc <- dist_loc/max(dist_loc)
+```
+Weighted average of the distances. Idea is to give more importance to text similarity and price. Although, this can be changed based on business knowledge.
+
+```{r}
+w1 <- 0.4
+w2 <- 0.4
+w3 <- 0.2
+dist_comb <- w1*dist_dtm + w2*dist_price + w3*dist_loc
+```
+
+Number of clusters are chosen to have a cluster size around 50. Number of clusters would be around 50 depending on the current number of observations.
+
+```{r}
+ncluster <- round(nrow(dtm)/50)
+```
+**K-means clustering was not considered as it uses only euclidean distance and customised distances can not be used in k-means and so k-mediods is considered**
+
+```{r}
+result <- fastkmed(dist_comb, ncluster = ncluster, iterate = 10)
+```
+Join the results to the base table
+
+```{r}
+listings_test[, cluster := NULL]
+listings_test <- cbind(listings_test, cluster = result$cluster)
+listings_test[,.N,by = cluster]
+```
+
+Manually see the items in the clusters
+
+```{r}
+head(listings_test)
+```
+
+Cluster group and the data of the mediod of the cluster is to be saved
+```{r}
+cluster_dt <- cbind(cluster = result$cluster, mediod = result$mediod)
+```
+
+**Mapping new listings**
+When a new listing is added, then the distance to the centroids of each of the cluster is computed based on td-idf, price and location. The cluster which is closest to the new listing is updated in the dataset.
+
+**Evaluation of the above approach**
+Cluster evaluation can be done two ways internal and external measures.
+Use A/B testing and compare metrics like click-through rate, watch rate etc.
+External measures can be implemented for the cases of known classes and internal measures use metrics such as intra cluster similarity.
+
+**Extentions of the above approach**
+Using search data to weigh the keywords i.e.higher weights to keywords which appear frequently in the search.
+Explore other clustering techniques for silimarity of text tokens. It is right now based on single-gram.
+Stemming can improve the td-idf matrix and the clustering
+
