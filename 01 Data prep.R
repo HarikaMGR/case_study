@@ -10,6 +10,7 @@ library(tm)
 library(devtools)
 library(Rcpp)
 library(rmarkdown)
+library(text2vec)
 
 list.files()
 
@@ -100,18 +101,21 @@ listings_test[,.N,by = cluster]
 # naive approach treats all the obs in a single group
 listings_test[, cluster_naive := 1]
 
-cls.scatt1 <- cls.scatt.data(dist_comb, listings_test$cluster)
-cls.scatt1.diss <- cls.scatt.diss.mx(diss.mx, clust)
-cls.scatt1$intracls.complete
-cls.scatt2 <- cls.scatt.data(dist_comb, listings_test$cluster_naive)
-cls.scatt2$intracls.complete
-
-# create a combined feature matrix
-com_matrix <- cbind(as.matrix(dtm),listings_test$listing_price,listings_test$listing_latitude,listings_test$listing_longitude)
-sim_matrix <- as.matrix(sim2(x = Matrix(dtm), method = "cosine", norm = "none"))
-
 # similarity
-similarity <- sim2(x = as.matrix(dtm), method = "cosine", norm = "12")
-similarity <- tcrossprod(normalize(as.matrix(dtm)))
-sum(similarity[upper.tri(similarity,diag = FALSE)])
-sum(similarity[lower.tri(similarity,diag = FALSE)])
+similarity_overall <- sim2(x = as.matrix(dtm), method = "cosine", norm = "l2")
+sum(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])
+mean(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])
+
+## compute by cluster
+dm = cbind(as.matrix(dtm), cluster = listings_test$cluster)
+no_cls <- length(unique(listings_test$cluster))
+dt_overall <- NULL
+for (i in 1:no_cls){
+  cluster <- i
+  count <- nrow(as.matrix(subset(dm, dm[,"cluster"] == i)))
+  similarity <- sim2(x = as.matrix(subset(dm, dm[,"cluster"] == i)), method = "cosine", norm = "l2")
+  simi_total <- sum(similarity[upper.tri(similarity,diag = FALSE)])
+  simi_avg <- mean(similarity[upper.tri(similarity,diag = FALSE)])
+  dt <- data.table(cluster = cluster, count = count, simi_total = simi_total, simi_avg = simi_avg)
+  dt_overall <- rbind(dt_overall,dt)
+}

@@ -4,13 +4,13 @@ output: html_document
 ---
 Set working directory
 ```{r}
-getwd()
+# getwd()
 setwd("./Data")
-getwd()
+# getwd()
 ```
 
 Install the libraries
-```{r, include=FALSE, message=FALSE}
+```{r,  message=FALSE}
 require(data.table)
 require(kmed)
 require(tm)
@@ -151,6 +151,35 @@ When a new listing is added, then the distance to the centroids of each of the c
 Cluster evaluation can be done two ways internal and external measures.
 Use A/B testing and compare metrics like click-through rate, watch rate etc.
 External measures can be implemented for the cases of known classes and internal measures use metrics such as intra cluster similarity.
+
+Compute overall similarity in naive approach. Treating the whole as single cluster
+
+```{r}
+# similarity
+similarity_overall <- sim2(x = as.matrix(dtm), method = "cosine", norm = "l2")
+sum(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])
+mean(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])
+```
+
+Compute similarity within clusters
+```{r}
+dm = cbind(as.matrix(dtm), cluster = listings_test$cluster)
+no_cls <- length(unique(listings_test$cluster))
+dt_overall <- NULL
+for (i in 1:no_cls){
+  cluster <- i
+  count <- nrow(as.matrix(subset(dm, dm[,"cluster"] == i)))
+  similarity <- sim2(x = as.matrix(subset(dm, dm[,"cluster"] == i)), method = "cosine", norm = "l2")
+  simi_total <- sum(similarity[upper.tri(similarity,diag = FALSE)])
+  simi_avg <- mean(similarity[upper.tri(similarity,diag = FALSE)])
+  dt <- data.table(cluster = cluster, count = count, simi_total = simi_total, simi_avg = simi_avg)
+  dt_overall <- rbind(dt_overall,dt)
+}
+setorder(dt_overall,-count)
+dt_overall
+```
+
+The average similarity using a naive approach is very low. Whereas the clustering approach has good similarity which shows it outperformed the naive method.
 
 **Extentions of the above approach**
 Using search data to weigh the keywords i.e.higher weights to keywords which appear frequently in the search.

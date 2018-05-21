@@ -123,12 +123,27 @@ $(document).ready(function () {
 
 
 <p>Set working directory</p>
-<pre class="r"><code>getwd()</code></pre>
-<pre><code>## [1] &quot;C:/Users/harika/Desktop/interview prep/dubbizle/case_study&quot;</code></pre>
-<pre class="r"><code>setwd(&quot;./Data&quot;)
-getwd()</code></pre>
-<pre><code>## [1] &quot;C:/Users/harika/Desktop/interview prep/dubbizle/case_study/Data&quot;</code></pre>
+<pre class="r"><code># getwd()
+setwd(&quot;./Data&quot;)
+# getwd()</code></pre>
 <p>Install the libraries</p>
+<pre class="r"><code>require(data.table)
+require(kmed)</code></pre>
+<pre><code>## Warning: package 'kmed' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(tm)</code></pre>
+<pre><code>## Warning: package 'tm' was built under R version 3.3.3</code></pre>
+<pre><code>## Warning: package 'NLP' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(devtools)</code></pre>
+<pre><code>## Warning: package 'devtools' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(Rcpp)</code></pre>
+<pre><code>## Warning: package 'Rcpp' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(rmarkdown)</code></pre>
+<pre><code>## Warning: package 'rmarkdown' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(clv)</code></pre>
+<pre><code>## Warning: package 'clv' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(text2vec)</code></pre>
+<pre><code>## Warning: package 'text2vec' was built under R version 3.3.3</code></pre>
+<pre class="r"><code>require(text2vec)</code></pre>
 <p>Import the data</p>
 <pre class="r"><code>query_dt &lt;- fread(&quot;C:/Users/harika/Desktop/interview prep/dubbizle/Data/za_queries_sample.csv&quot;)
 listings_dt &lt;- fread(&quot;C:/Users/harika/Desktop/interview prep/dubbizle/Data/za_sample_listings_incl_cat.csv&quot;)</code></pre>
@@ -583,6 +598,92 @@ listings_test[,.N,by = cluster]</code></pre>
 <pre class="r"><code>cluster_dt &lt;- cbind(cluster = result$cluster, mediod = result$mediod)</code></pre>
 <p><strong>Mapping new listings</strong> When a new listing is added, then the distance to the centroids of each of the cluster is computed based on td-idf, price and location. The cluster which is closest to the new listing is updated in the dataset.</p>
 <p><strong>Evaluation of the above approach</strong> Cluster evaluation can be done two ways internal and external measures. Use A/B testing and compare metrics like click-through rate, watch rate etc. External measures can be implemented for the cases of known classes and internal measures use metrics such as intra cluster similarity.</p>
+<p>Compute overall similarity in naive approach. Treating the whole as single cluster</p>
+<pre class="r"><code># similarity
+similarity_overall &lt;- sim2(x = as.matrix(dtm), method = &quot;cosine&quot;, norm = &quot;l2&quot;)
+sum(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])</code></pre>
+<pre><code>## [1] 182659.8</code></pre>
+<pre class="r"><code>mean(similarity_overall[upper.tri(similarity_overall,diag = FALSE)])</code></pre>
+<pre><code>## [1] 0.03964719</code></pre>
+<p>Compute similarity within clusters</p>
+<pre class="r"><code>dm = cbind(as.matrix(dtm), cluster = listings_test$cluster)
+no_cls &lt;- length(unique(listings_test$cluster))
+dt_overall &lt;- NULL
+for (i in 1:no_cls){
+  cluster &lt;- i
+  count &lt;- nrow(as.matrix(subset(dm, dm[,&quot;cluster&quot;] == i)))
+  similarity &lt;- sim2(x = as.matrix(subset(dm, dm[,&quot;cluster&quot;] == i)), method = &quot;cosine&quot;, norm = &quot;l2&quot;)
+  simi_total &lt;- sum(similarity[upper.tri(similarity,diag = FALSE)])
+  simi_avg &lt;- mean(similarity[upper.tri(similarity,diag = FALSE)])
+  dt &lt;- data.table(cluster = cluster, count = count, simi_total = simi_total, simi_avg = simi_avg)
+  dt_overall &lt;- rbind(dt_overall,dt)
+}
+setorder(dt_overall,-count)
+dt_overall</code></pre>
+<pre><code>##     cluster count   simi_total  simi_avg
+##  1:      56   256 3.261376e+04 0.9991961
+##  2:      40   181 1.627134e+04 0.9988547
+##  3:      34   180 1.608659e+04 0.9985467
+##  4:       6   157 1.156968e+04 0.9447719
+##  5:      38   143 1.014006e+04 0.9987255
+##  6:       2   137 6.688841e+03 0.7179950
+##  7:      23   135 9.014824e+03 0.9966637
+##  8:      17   113 6.292344e+03 0.9943654
+##  9:      54    94 4.368740e+03 0.9994830
+## 10:       4    92 3.749240e+03 0.8956617
+## 11:      50    92 4.181045e+03 0.9988164
+## 12:      26    87 3.732193e+03 0.9976457
+## 13:      41    87 3.736790e+03 0.9988747
+## 14:      19    77 2.912113e+03 0.9952539
+## 15:      43    74 2.698612e+03 0.9991159
+## 16:      59    69 2.344604e+03 0.9994049
+## 17:      61    65 2.078864e+03 0.9994538
+## 18:      18    62 1.877444e+03 0.9928315
+## 19:       5    61 1.738310e+03 0.9498964
+## 20:      60    61 1.829028e+03 0.9994689
+## 21:      28    58 1.649305e+03 0.9977648
+## 22:       3    57 1.294481e+03 0.8110783
+## 23:      27    57 1.592182e+03 0.9976075
+## 24:      52    56 1.539108e+03 0.9994209
+## 25:      49    52 1.325131e+03 0.9993443
+## 26:      14    50 1.215398e+03 0.9921614
+## 27:      33    47 1.079478e+03 0.9985916
+## 28:      39    46 1.033506e+03 0.9985563
+## 29:      44    45 9.889565e+02 0.9989460
+## 30:      48    39 7.405285e+02 0.9993637
+## 31:      21    30 4.336456e+02 0.9968863
+## 32:      11    29 3.982871e+02 0.9810028
+## 33:      36    27 3.506679e+02 0.9990540
+## 34:      57    27 3.509192e+02 0.9997698
+## 35:       9    23 2.471182e+02 0.9767517
+## 36:      37    22 2.305708e+02 0.9981421
+## 37:       7    17 1.318503e+02 0.9694875
+## 38:      53    16 1.199925e+02 0.9999374
+## 39:      13    11 5.423377e+01 0.9860686
+## 40:       1    10 1.604574e+01 0.3565721
+## 41:      29    10 4.490294e+01 0.9978431
+## 42:      46    10 4.497757e+01 0.9995017
+## 43:       8     8 2.722002e+01 0.9721435
+## 44:      31     7 2.095480e+01 0.9978476
+## 45:      45     7 2.098915e+01 0.9994831
+## 46:      55     7 2.096795e+01 0.9984737
+## 47:      15     6 1.491711e+01 0.9944740
+## 48:      42     6 1.499196e+01 0.9994642
+## 49:      30     5 9.990963e+00 0.9990963
+## 50:      12     4 5.973630e+00 0.9956050
+## 51:      20     4 5.968289e+00 0.9947148
+## 52:      22     4 5.990135e+00 0.9983558
+## 53:      32     4 5.997347e+00 0.9995578
+## 54:      24     2 9.994146e-01 0.9994146
+## 55:      35     2 9.958776e-01 0.9958776
+## 56:      47     2 9.991592e-01 0.9991592
+## 57:      51     2 9.987458e-01 0.9987458
+## 58:      10     1 0.000000e+00       NaN
+## 59:      16     1 0.000000e+00       NaN
+## 60:      25     1 0.000000e+00       NaN
+## 61:      58     1 0.000000e+00       NaN
+##     cluster count   simi_total  simi_avg</code></pre>
+<p>The average similarity using a naive approach is very low. Whereas the clustering approach has good similarity which shows it outperformed the naive method.</p>
 <p><strong>Extentions of the above approach</strong> Using search data to weigh the keywords i.e.higher weights to keywords which appear frequently in the search. Explore other clustering techniques for silimarity of text tokens. It is right now based on single-gram. Stemming can improve the td-idf matrix and the clustering</p>
 
 
